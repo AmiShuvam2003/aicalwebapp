@@ -1,0 +1,149 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calorie App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #f3e7e9 0%, #e3eeff 100%);
+            min-height: 100vh;
+        }
+        .card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+        }
+        #cameraPreview {
+            display: none;
+            max-width: 100%;
+            border-radius: 8px;
+        }
+    </style>
+</head>
+<body class="font-sans">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-4xl font-bold text-center text-gray-800 mb-8">Calorie Tracker</h1>
+        
+        <div class="max-w-md mx-auto bg-white rounded-xl shadow-lg p-6 mb-8">
+            <div class="flex flex-col gap-4">
+                <div class="flex justify-center gap-4">
+                    <button id="takePhotoBtn" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600">
+                        Take Photo
+                    </button>
+                    <label class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 cursor-pointer">
+                        Upload Image
+                        <input type="file" id="imageUpload" accept="image/*" class="hidden">
+                    </label>
+                </div>
+                <video id="cameraPreview" autoplay class="mx-auto"></video>
+                <canvas id="photoCanvas" class="hidden"></canvas>
+                <button id="captureBtn" class="bg-purple-500 text-white px-4 py-2 rounded-lg hover:bg-purple-600 hidden">
+                    Capture
+                </button>
+            </div>
+        </div>
+
+        <div id="results" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Results will be displayed here -->
+        </div>
+    </div>
+
+    <script>
+        const takePhotoBtn = document.getElementById('takePhotoBtn');
+        const captureBtn = document.getElementById('captureBtn');
+        const imageUpload = document.getElementById('imageUpload');
+        const cameraPreview = document.getElementById('cameraPreview');
+        const photoCanvas = document.getElementById('photoCanvas');
+        const results = document.getElementById('results');
+        let stream = null;
+
+        // Start camera
+        takePhotoBtn.addEventListener('click', async () => {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                cameraPreview.srcObject = stream;
+                cameraPreview.style.display = 'block';
+                captureBtn.style.display = 'block';
+                takePhotoBtn.style.display = 'none';
+            } catch (err) {
+                alert('Error accessing camera: ' + err.message);
+            }
+        });
+
+        // Capture photo
+        captureBtn.addEventListener('click', () => {
+            const context = photoCanvas.getContext('2d');
+            photoCanvas.width = cameraPreview.videoWidth;
+            photoCanvas.height = cameraPreview.videoHeight;
+            context.drawImage(cameraPreview, 0, 0);
+            
+            // Stop camera
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                cameraPreview.style.display = 'none';
+                captureBtn.style.display = 'none';
+                takePhotoBtn.style.display = 'block';
+            }
+
+            // Process image
+            photoCanvas.toBlob(blob => processImage(blob), 'image/jpeg');
+        });
+
+        // Image upload
+        imageUpload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                processImage(file);
+            }
+        });
+
+        // Process image and call dummy API
+        async function processImage(blob) {
+            try {
+                // Simulate API call
+                const response = await dummyApiCall(blob);
+                displayResult(response);
+            } catch (err) {
+                alert('Error processing image: ' + err.message);
+            }
+        }
+
+        // Dummy API call
+        async function dummyApiCall(blob) {
+            // Simulate network delay
+            await new Promise(resolve => setTimeout(resolve, 1000));
+            
+            // Mock response
+            return {
+                food: 'Pizza',
+                calories: Math.floor(Math.random() * 500) + 200,
+                nutrients: {
+                    protein: Math.floor(Math.random() * 20) + 5,
+                    carbs: Math.floor(Math.random() * 50) + 20,
+                    fat: Math.floor(Math.random() * 30) + 10
+                }
+            };
+        }
+
+        // Display result in card
+        function displayResult(data) {
+            const card = document.createElement('div');
+            card.className = 'card bg-white rounded-xl shadow-lg p-6';
+            card.innerHTML = `
+                <h2 class="text-2xl font-semibold text-gray-800 mb-4">${data.food}</h2>
+                <div class="space-y-2">
+                    <p class="text-gray-600"><span class="font-medium">Calories:</span> ${data.calories} kcal</p>
+                    <p class="text-gray-600"><span class="font-medium">Protein:</span> ${data.nutrients.protein}g</p>
+                    <p class="text-gray-600"><span class="font-medium">Carbs:</span> ${data.nutrients.carbs}g</p>
+                    <p class="text-gray-600"><span class="font-medium">Fat:</span> ${data.nutrients.fat}g</p>
+                </div>
+            `;
+            results.prepend(card);
+        }
+    </script>
+</body>
+</html>

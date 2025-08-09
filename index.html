@@ -1,0 +1,212 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Calorie App</title>
+    <script src="https://cdn.tailwindcss.com"></script>
+    <style>
+        body {
+            background: linear-gradient(135deg, #f3e7e9 0%, #e3eeff 100%);
+            min-height: 100vh;
+        }
+        .card {
+            transition: transform 0.3s ease, box-shadow 0.3s ease;
+        }
+        .card:hover {
+            transform: translateY(-5px);
+            box-shadow: 0 10px 20px rgba(0, 0, 0, 0.1);
+        }
+        #cameraPreview {
+            display: none;
+            max-width: 100%;
+            border-radius: 8px;
+        }
+        .food-image {
+            max-width: 100%;
+            height: auto;
+            border-radius: 8px;
+            object-fit: cover;
+        }
+    </style>
+</head>
+<body class="font-sans">
+    <div class="container mx-auto px-4 py-8">
+        <h1 class="text-4xl font-bold text-center text-gray-800 mb-8">Calorie Tracker</h1>
+        
+        <div class="max-w-md mx-auto bg-white rounded-xl shadow-lg p-6 mb-8">
+            <div class="flex flex-col gap-4">
+                <div class="flex justify-center gap-4">
+                    <button id="takePhotoBtn" class="bg-blue-500 text-white px-4 py-2 rounded-lg hover:bg-blue-600">
+                        Take Photo
+                    </button>
+                    <label class="bg-green-500 text-white px-4 py-2 rounded-lg hover:bg-green-600 cursor-pointer">
+                        Upload Image
+                        <input type="file" id="imageUpload" accept="image/*" class="hidden">
+                    </label>
+                </div>
+                <video id="cameraPreview" autoplay class="mx-auto"></video>
+                <canvas id="photoCanvas" class="hidden"></canvas>
+                <button id="captureBtn" class="bg-purple-500 text-white px-4 py-2 rounded-lg hover:bg-purple-600 hidden">
+                    Capture
+                </button>
+            </div>
+        </div>
+
+        <div id="results" class="grid grid-cols-1 md:grid-cols-2 lg:grid-cols-3 gap-6">
+            <!-- Results will be displayed here -->
+        </div>
+    </div>
+
+    <script>
+        const takePhotoBtn = document.getElementById('takePhotoBtn');
+        const captureBtn = document.getElementById('captureBtn');
+        const imageUpload = document.getElementById('imageUpload');
+        const cameraPreview = document.getElementById('cameraPreview');
+        const photoCanvas = document.getElementById('photoCanvas');
+        const results = document.getElementById('results');
+        let stream = null;
+
+        // Start camera
+        takePhotoBtn.addEventListener('click', async () => {
+            try {
+                stream = await navigator.mediaDevices.getUserMedia({ video: true });
+                cameraPreview.srcObject = stream;
+                cameraPreview.style.display = 'block';
+                captureBtn.style.display = 'block';
+                takePhotoBtn.style.display = 'none';
+            } catch (err) {
+                alert('Error accessing camera: ' + err.message);
+            }
+        });
+
+        // Capture photo
+        captureBtn.addEventListener('click', () => {
+            const context = photoCanvas.getContext('2d');
+            photoCanvas.width = cameraPreview.videoWidth;
+            photoCanvas.height = cameraPreview.videoHeight;
+            context.drawImage(cameraPreview, 0, 0);
+            
+            // Stop camera
+            if (stream) {
+                stream.getTracks().forEach(track => track.stop());
+                cameraPreview.style.display = 'none';
+                captureBtn.style.display = 'none';
+                takePhotoBtn.style.display = 'block';
+            }
+
+            // Process image
+            photoCanvas.toBlob(blob => processImage(blob), 'image/jpeg');
+        });
+
+        // Image upload
+        imageUpload.addEventListener('change', (e) => {
+            const file = e.target.files[0];
+            if (file) {
+                processImage(file);
+            }
+        });
+
+        // Process image: Upload to ImgBB and call Groq API
+        async function processImage(blob) {
+            try {
+                // Create image URL for display
+                const imageUrl = URL.createObjectURL(blob);
+                
+                // Upload to ImgBB
+                const imgbbResponse = await uploadToImgBB(blob);
+                const remoteImageUrl = imgbbResponse.data.url;
+
+                // Call Groq API with the image URL
+                const groqResponse = await callGroqApi(remoteImageUrl);
+                const nutritionData = JSON.parse(groqResponse.choices[0].message.content);
+
+                displayResult(nutritionData.items, imageUrl);
+            } catch (err) {
+                alert('Error processing image: ' + err.message);
+            }
+        }
+
+        // Upload image to ImgBB
+        async function uploadToImgBB(blob) {
+            const formData = new FormData();
+            formData.append('image', blob);
+
+            const response = await fetch('https://api.imgbb.com/1/upload?key=9d021a58831978bb122d18379544d016', {
+                method: 'POST',
+                body: formData
+            });
+
+            if (!response.ok) {
+                throw new Error('ImgBB upload failed');
+            }
+
+            return await response.json();
+        }
+
+        // Call Groq API for nutritional analysis
+        async function callGroqApi(imageUrl) {
+            const response = await fetch('https://api.groq.com/openai/v1/chat/completions', {
+                method: 'POST',
+                headers: {
+                    'Content-Type': 'application/json',
+                    'Authorization': 'Bearer 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'
+                },
+                body: JSON.stringify({
+                    messages: [{
+                        role: 'user',
+                        content: [
+                            {
+                                type: 'text',
+                                text: 'Give details of each item in this image in this below JSON format only\n {items:[{item_name:name of item, total_calories:in calories, total_protien:in gm , toal_carbs: in gm ,toal_fats:in gm},...]}'
+                            },
+                            {
+                                type: 'image_url',
+                                image_url: { url: imageUrl }
+                            }
+                        ]
+                    }],
+                    model: 'meta-llama/llama-4-scout-17b-16e-instruct',
+                    temperature: 0.5,
+                    max_completion_tokens: 1024,
+                    top_p: 1,
+                    stream: false,
+                    response_format: { type: 'json_object' },
+                    stop: null
+                })
+            });
+
+            if (!response.ok) {
+                throw new Error('Groq API call failed');
+            }
+
+            return await response.json();
+        }
+
+        // Display result in card
+        function displayResult(items, imageUrl) {
+            const card = document.createElement('div');
+            card.className = 'card bg-white rounded-xl shadow-lg p-6';
+            let itemsHtml = '';
+            
+            items.forEach(item => {
+                itemsHtml += `
+                    <div class="mb-4">
+                        <h3 class="text-xl font-semibold text-gray-800">${item.item_name}</h3>
+                        <p class="text-gray-600"><span class="font-medium">Calories:</span> ${item.total_calories} calories</p>
+                        <p class="text-gray-600"><span class="font-medium">Protein:</span> ${item.total_protein}gm</p>
+                        <p class="text-gray-600"><span class="font-medium">Carbs:</span> ${item.total_carbs}gm</p>
+                        <p class="text-gray-600"><span class="font-medium">Fat:</span> ${item.total_fats}gm</p>
+                    </div>
+                `;
+            });
+
+            card.innerHTML = `
+                <img src="${imageUrl}" alt="Food" class="food-image mb-4" style="max-height: 200px;">
+                ${itemsHtml}
+            `;
+            results.prepend(card);
+        }
+    </script>
+</body>
+</html>
